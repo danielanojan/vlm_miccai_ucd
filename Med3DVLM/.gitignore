@@ -176,4 +176,4 @@ cython_debug/
 .vscode/
 models/
 output/
-wandb/
+wandb/.DS_Store

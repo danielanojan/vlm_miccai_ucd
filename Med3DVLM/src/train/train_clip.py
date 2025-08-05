@@ -33,7 +33,7 @@ def rank0_print(*args):
 class ModelArguments:
     wb_name: Optional[str] = field(default="CLIP")
     language_model_name_or_path: str = field(
-        default="./LaMed/pretrained_model/bert_base_uncased/"
+        default="medicalai/ClinicalBERT"
     )
 
     efficient_loss: bool = field(
@@ -64,15 +64,28 @@ class ModelArguments:
     siglip_margin: float = field(default=0.1)
 
 
+# @dataclass
+# class DataArguments:
+#        default="./data", metadata={"help": "Root directory for all data."}
+#    )
+#    # caption data
+#    cap_data_path: str = field(
+#        default="./data/M3D_Cap_npy/M3D_Cap.json",
+#        metadata={"help": "Path to caption data."},
+#    )
+#    max_length: int = field(default=512)
+
+
+
 @dataclass
 class DataArguments:
-    data_root: str = field(
-        default="./data", metadata={"help": "Root directory for all data."}
-    )
+    #data_root: str = field(
+    #    default="./data", metadata={"help": "Root directory for all data."}
+    #)
     # caption data
-    cap_data_path: str = field(
-        default="./data/M3D_Cap_npy/M3D_Cap.json",
-        metadata={"help": "Path to caption data."},
+    csv_path: str = field(
+        default="/mnt/recsys/prateek/ct-rate/data_volumes/dataset/train_256/train_imgs_ct-rate_3000.csv",
+        metadata={"help": "Path to CSV File of traiing data"},
     )
     max_length: int = field(default=512)
 
@@ -83,21 +96,22 @@ class TrainingArguments(transformers.TrainingArguments):
     optim: str = field(default="adamw_torch")
     remove_unused_columns: bool = field(default=False)
 
-    ddp_backend: str = "nccl"
+    #ddp_backend: str = "nccl"
+    ddp_backend: str = None
     ddp_find_unused_parameters: bool = False
 
     # config in bash file
     bf16: bool = True
-    output_dir: str = "./output/CLIP"
-    num_train_epochs: int = 100
-    per_device_train_batch_size: int = 32  # 32
+    output_dir: str = "./output/CLIP_testa"
+    num_train_epochs: int = 200
+    per_device_train_batch_size: int = 8  # 32
     per_device_eval_batch_size: int = 4
     gradient_accumulation_steps: int = 1
     eval_strategy: str = "steps"
     eval_accumulation_steps: int = 1
-    eval_steps: float = 0.04  # 0.04
+    eval_steps: float = 0.01  # 0.04
     save_strategy: str = "steps"
-    save_steps: int = 1000
+    save_steps: int = 5000
     save_total_limit: int = 1
     learning_rate: float = 1e-4  # 1e-4
     weight_decay: float = 0.1
@@ -120,6 +134,8 @@ def compute_metrics(eval_pred):
 
 
 def preprocess_logits_for_metrics(logits, labels):
+    if isinstance(logits, tuple):
+        logits = logits[0]
     preds = torch.argmax(logits, dim=-1)
     return preds
 
@@ -141,8 +157,9 @@ class DataCollator:
 
         batch_size = images.shape[0]
         if self.gather_all:
-            world_size = torch.distributed.get_world_size()
-            batch_size *= world_size
+            if torch.distributed.is_available() and torch.distributed.is_initialized():
+                world_size = torch.distributed.get_world_size()
+                batch_size *= world_size
 
         labels = torch.arange(batch_size, device=images.device, dtype=torch.long)
 
@@ -157,13 +174,29 @@ class DataCollator:
 
 
 def main():
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        rank0_print("Running in distributed mode")
+    else:
+        rank0_print("Running in single GPU mode")
+
+
     parser = transformers.HfArgumentParser(
         (ModelArguments, DataArguments, TrainingArguments)
     )
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
+    print ('language model path', model_args.language_model_name_or_path)
     tokenizer = AutoTokenizer.from_pretrained(model_args.language_model_name_or_path)
+    #auto Tokenizer will output 3 different outputs
+    # input_ids - Token IDs corresponding to the text after its tokenized and mapped to vocabulary
+    #token_type_ids - Its relevant to bert models which are trained on sentence pairs. They tell which part of input
+    ###belongs to sentence A and which part belongs to sentence B
 
+    # attention Mask - it tells the mode which tokens to attend which ones to ignore
+    ### 1 - keep the token and 0 - ignore the token
+
+    # this is loading clip model
+    # in clip vision endoder - DFORMER and language Encoder is language_model_name_or_path=medicalai/ClinicalBERT
     config = DEC_CLIPConfig.from_dict(vars(model_args))
     model = DEC_CLIP(config)
 
@@ -173,13 +206,20 @@ def main():
         model.load_state_dict(ckpt, strict=True)
         print("load pretrained model.")
 
+    # the following loads the train and evaluation datasets.
     train_dataset = CLIPDataset(data_args, tokenizer, mode="train")
     eval_dataset = CLIPDataset(data_args, tokenizer, mode="validation")
+
+    print ('Length of train Dataseet', len(train_dataset))
+    print('Length of Eval Dataseet', len(eval_dataset))
 
     if model_args.gather_loss and not model_args.local_loss:
         gather_all = True
     else:
         gather_all = False
+
+    # this is a class. It loads the image and vision tags - ("image", "text", "input_id", "attention_mask")
+    # how image is loaded - its handled by
     data_collator = DataCollator(gather_all)
 
     trainer = CLIPTrainer(
@@ -191,7 +231,6 @@ def main():
         compute_metrics=compute_metrics,
         preprocess_logits_for_metrics=preprocess_logits_for_metrics,
     )
-
     if is_rank_zero():
         wandb.login()
         wandb.init(project="Med3DVLM", name=model_args.wb_name)

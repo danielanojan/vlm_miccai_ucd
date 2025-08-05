@@ -3,7 +3,7 @@ import os
 import numpy as np
 import torch
 from torch.utils.data import Dataset
-
+import pandas as pd
 import json
 import monai.transforms as mtf
 import SimpleITK as sitk
@@ -13,13 +13,14 @@ from monai.data import set_track_meta
 class CLIPDataset(Dataset):
     def __init__(self, args, tokenizer, mode="train", test_size=1000):
         self.args = args
-        self.data_root = args.data_root
+        #self.data_root = args.csv_location
         self.tokenizer = tokenizer
         self.mode = mode
-
-        with open(args.cap_data_path, 'r') as file:
-            self.json_file = json.load(file)
-        self.data_list = self.json_file[mode]
+        self.df = pd.read_csv(args.csv_path)
+        # commenting this part - not using a json file
+        # with open(args.cap_data_path, 'r') as file:
+        #    self.json_file = json.load(file)
+        #self.data_list = self.json_file[mode]
 
         train_transform = mtf.Compose(
             [
@@ -43,9 +44,10 @@ class CLIPDataset(Dataset):
 
         if mode == 'train':
             self.transform = train_transform
+            self.data_list = self.df[:2700]
         elif mode == 'validation':
             self.transform = val_transform
-            self.data_list = self.data_list[:512]
+            self.data_list = self.df[2700:]
         elif 'test' in mode:
             self.transform = val_transform
             self.data_list = self.data_list[:test_size]
@@ -85,9 +87,11 @@ class CLIPDataset(Dataset):
         max_attempts = 100
         for _ in range(max_attempts):
             try:
-                data = self.data_list[idx]
-                image_path = data["image"]
-                image_abs_path = os.path.join(self.data_root, image_path)
+                data = self.data_list.iloc[idx]
+                image_abs_path = data["VolumePath"]
+
+                #absolute path is there already. So i am commenting this out
+                #image_abs_path = os.path.join(self.data_root, image_path)
 
                 # image = np.load(image_abs_path)  # nomalized 0-1, C,D,H,W
                 # image = np.load(img_abs_path)[np.newaxis, ...]  # nomalized
@@ -96,12 +100,13 @@ class CLIPDataset(Dataset):
                 image = np.expand_dims(image, axis=0)
                 image = self.transform(image)
 
-                text_path = data["text"]
-                text_abs_path = os.path.join(self.data_root, text_path)
-                with open(text_abs_path, 'r') as text_file:
-                    raw_text = text_file.read()
+                #commenting this out
+                # text_path = data["text"]
+                # text_abs_path = os.path.join(self.data_root, text_path)
+                #with open(text_abs_path, 'r') as text_file:
+                #    raw_text = text_file.read()
+                raw_text = data['Impressions_EN']
                 text = self.truncate_text(raw_text, self.args.max_length)
-
                 text_tensor = self.tokenizer(
                     text, max_length=self.args.max_length, truncation=True, padding="max_length", return_tensors="pt"
                 )

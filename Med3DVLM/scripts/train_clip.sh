@@ -6,10 +6,10 @@ deepspeed src/train/train_clip.py \
     --wb_name DCFormer_SigLIP \
     --vision_encoder "dcformer" \
     --loss_type "sigmoid" \
-    --data_root ./data \
+    --csv_path /mnt/recsys/daniel/miccai_vlm/train_imgs_ct-rate_3000.csv \
     --max_length 512 \
     --bf16 True \
-    --output_dir ./output/DCFormer_SigLIP \
+    --output_dir /mnt/recsys/daniel/miccai_vlm/checkpoints_Med3DVLM/output/DCFormer_SigLIP \
     --num_train_epochs 100 \
     --per_device_train_batch_size 64 \
     --per_device_eval_batch_size 4 \

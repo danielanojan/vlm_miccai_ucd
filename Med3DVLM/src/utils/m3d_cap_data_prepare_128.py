@@ -22,16 +22,22 @@ def process_subfolder(subfolder, input_dir, output_dir):
             with open(text_path, 'r') as file:
                 text_content = file.read()
 
+            # load the subfolders from main folder and find the text file and read it
+            # in text file identify study findings column
             search_text = "study_findings:"
             index = text_content.find(search_text)
 
             if index != -1:
+                # here - finds the text which appears right after the substring - Then it slices the txt.
+                # then it replaces all new line characters with space and finally strip any whitespace characters
+
                 filtered_text = text_content[index + len(search_text):].replace("\n", " ").strip()
             else:
                 print("Specified string not found")
                 filtered_text = text_content.replace("\n", " ").strip()
 
-
+            # if the length of the filtered text from previous section too small - less than 5 characters - then
+            # look at discussionsection. Do preprocessing and add to the filtered text.
             if len(filtered_text.replace("\n", "").replace(" ", "")) < 5:
                 search_text = "discussion:"
                 index = text_content.find(search_text)
@@ -45,7 +51,7 @@ def process_subfolder(subfolder, input_dir, output_dir):
             if len(filtered_text.replace("\n", "").replace(" ", "")) < 5:
                 filtered_text = text_content.replace("\n", " ").strip()
 
-
+            #this new text is saved in a new text file
             new_text_path = os.path.join(output_dir, subfolder, subsubfolder)
             with open(new_text_path, 'w') as new_file:
                 new_file.write(filtered_text)
@@ -54,8 +60,9 @@ def process_subfolder(subfolder, input_dir, output_dir):
 
         if os.path.isdir(subsubfolder_path):
             subsubfolder = unidecode(subsubfolder) # "Pöschl" -> Poschl
+            # here output files - how the files will be saved - nifty
             output_path = os.path.join(output_dir, subfolder, f'{subsubfolder}.nii.gz')
-
+            #input images are in the form jpeg or png
             image_files = [file for file in os.listdir(subsubfolder_path) if
                            file.endswith('.jpeg') or file.endswith('.png')]
 
@@ -64,6 +71,7 @@ def process_subfolder(subfolder, input_dir, output_dir):
 
             image_files.sort(key=lambda x: int(os.path.splitext(x)[0]))
 
+            # converts text files into (D, 1, H, W) 3D image
             images_3d = []
             for image_file in image_files:
                 image_path = os.path.join(subsubfolder_path, image_file)
