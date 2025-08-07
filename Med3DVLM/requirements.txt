@@ -13,7 +13,7 @@ beautifulsoup4==4.13.3
 bert-score==0.3.13
 blinker==1.9.0
 cachetools==5.5.1
-causal-conv1d==1.5.0.post8
+#causal-conv1d==1.5.0.post8
 certifi==2025.1.31
 charset-normalizer==3.4.1
 clearml==1.17.2rc0
